@@ -32,6 +32,7 @@ namespace :cc do
 
     # if the project defines 'cruise' Rake task, that's all we need to do
     elsif Rake.application.lookup('cruise')
+      p "Executing custom app rake task"
       CruiseControl::invoke_rake_task 'cruise'
     else
 

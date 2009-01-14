@@ -7,6 +7,8 @@ class BuildLogParser
   RSPEC_FAILURE_REGEX = /^'(.*)' FAILED\n((.+\n)+)/
   RSPEC_STACK_TRACE_REGEX = /^.*:\d+:.*$/
   RSPEC_STACK_TRACE_MAYBE_END_REGEX = /\n\nFinished.*$/
+
+  SELENIUM_RESULTS_REGEX = /(\d+) tests passed, (\d+) tests failed/
   
   TEST_NAME_REGEX = /\S+/
   MESSAGE_REGEX = /\]\:\n([\s\S]+)/
@@ -17,7 +19,15 @@ class BuildLogParser
   end
 
   def errors
-    test_errors + rspec_errors
+    test_errors + rspec_errors + selenium_errors
+  end
+
+  def selenium_errors
+      errors = []
+      @log.scan(TEST_ERROR_REGEX) do |match|
+	errors << "#{$2} Selenium Tests Failed"
+      end
+      return errors
   end
 
   def test_errors

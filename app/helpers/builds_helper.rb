@@ -12,9 +12,15 @@ module BuildsHelper
   end
   
   def format_build_log(log)
-    strip_ansi_colors(highlight_test_count(link_to_code(h(log))))
+    wrap_testing_dots(strip_ansi_colors(highlight_test_count(link_to_code(h(log)))))
   end
   
+  def wrap_testing_dots(log, max_width = 100)
+    (log.length < max_width) ?
+    log :
+    log.gsub(/[\.FP]{10,#{max_width}}/,'\0<br />')
+  end
+
   def link_to_code(log)
     @work_path ||= File.expand_path(@project.path + '/work')
     
@@ -74,7 +80,8 @@ module BuildsHelper
 
   def highlight_test_count(log)
     log.gsub(/\d+ tests, \d+ assertions, \d+ failures, \d+ errors/, '<div class="test-results">\0</div>').
-        gsub(/\d+ examples, \d+ failures/, '<div class="test-results">\0</div>')
+        gsub(/\d+ examples, \d+ failures/, '<div class="test-results">\0</div>').
+        gsub(/\d+ tests passed, \d+ tests failed/, '<div class="test-results">\0</div>')
   end
 
   def strip_ansi_colors(log)

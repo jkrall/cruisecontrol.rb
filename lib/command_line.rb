@@ -112,19 +112,15 @@ module CommandLine
     capture_info_command = (block_given? && options[:stdout]) ?
         "echo [output captured and therefore not logged] >> #{options[:stdout]} && " :
         ''
-
     cmd = escape_and_concatenate(cmd) unless cmd.is_a? String
 
     stdout_prompt_command = options[:stdout] ?
                               "echo #{Platform.prompt} #{cmd} >> #{options[:stdout]} && " :
                               ''
-
     stderr_prompt_command = options[:stderr] && options[:stderr] != options[:stdout] ?
                               "echo #{Platform.prompt} #{cmd} >> #{options[:stderr]} && " :
                               ''
-
     redirected_command = block_given? ? "#{cmd} #{stderr_opt}" : "#{cmd} #{stdout_opt} #{stderr_opt}"
-
     stdout_prompt_command + capture_info_command + stderr_prompt_command + redirected_command
   end
   module_function :full_cmd
