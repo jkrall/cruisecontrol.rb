@@ -1,0 +1,22 @@
+<%
+   files = Dir.glob( File.join(path,'*') )
+   urls = files.collect {|f| request.path + f.sub(path, '') }
+   up_path = request.path.sub(File.basename(request.path)+'/','')
+%>
+<html>
+<body>
+  <h2>Listing for <%= request.path %></h2>
+  <p>
+    <%= link_to "Up to #{up_path}", up_path %>
+  </p>
+  <% urls.each do |f| %>
+  <p>
+    <% if f.match(/\.(jpg|gif|png)$/) %>
+    <%= link_to image_tag(f, :width=>500), f %>
+    <% else %>
+    <%= link_to f, f %>
+    <% end %>
+  </p>
+  <% end %>
+</body>
+</html>

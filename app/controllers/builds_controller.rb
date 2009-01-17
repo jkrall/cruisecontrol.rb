@@ -43,7 +43,8 @@ class BuildsController < ApplicationController
         redirect_to :path => File.join(params[:path], 'index.html')
       else
         # TODO: generate an index from directory contents
-        render :text => "this should be an index of #{params[:path]}"
+        # render :text => "this should be an index of #{params[:path]}"
+        render :partial=>'builds/directorylist', :locals=>{:rawpath=>params[:path], :path=>path}
       end
     elsif File.exists? path
       send_file(path, :type => get_mime_type(path), :disposition => 'inline', :stream => false)
