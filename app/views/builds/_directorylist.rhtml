@@ -4,19 +4,20 @@
    up_path = request.path.sub(File.basename(request.path)+'/','')
 %>
 <html>
-<body>
+<body style='font-size: 10px;'>
   <h2>Listing for <%= request.path %></h2>
-  <p>
-    <%= link_to "Up to #{up_path}", up_path %>
-  </p>
-  <% urls.each do |f| %>
-  <p>
-    <% if f.match(/\.(jpg|gif|png)$/) %>
-    <%= link_to image_tag(f, :width=>500), f %>
-    <% else %>
-    <%= link_to f, f %>
+    <p>
+      <%= link_to "Up to #{up_path}", up_path %>
+    </p>
+    <% urls.each do |f| %>
+    <p style='float: left; margin-left: 20px; margin-bottom: 20px;'>
+      <% if f.match(/\.(jpg|gif|png)$/) %>
+      <%= link_to File.basename(f), f %><br />
+      <%= link_to image_tag(f, :width=>300), f %>
+      <% else %>
+      <%= link_to File.basename(f), f %>
+      <% end %>
+    </p>
     <% end %>
-  </p>
-  <% end %>
 </body>
 </html>
