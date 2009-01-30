@@ -1,0 +1,83 @@
+<%
+   files = Dir.glob( File.join(@path,'*') )
+   urls = files.collect {|f| request.path + f.sub(@path, '') }.sort
+   up_path = request.path.sub(/#{File.basename(request.path)}/,'').sub(/\/+$/,'')
+%>
+<% @rss_feeds = {"#{@project.name} builds" => {:controller => 'projects', :action => 'show', :id => @project, :format => 'rss'}} -%>
+
+<div id="builds_list">
+  <div id="navigate_build">
+    <% prev_build, next_build = @project.previous_build(@build), @project.next_build(@build)%>
+    
+    <%= link_to_unless !prev_build, '&lt; prev', 
+                       {:project => @project, :build => prev_build}, :accesskey => 'k' %>
+    <strong><%= @build.label %></strong>
+    <%= link_to_unless !next_build, 'next &gt;', 
+                       {:project => @project, :build => next_build}, :accesskey => 'j' %>
+    <%= link_to_unless !next_build, 'latest &gt;&gt;', :project => @project.name %>
+  </div>
+  
+  <% @builds_for_navigation_list.each do |build| %>
+    <div class="build-link<%= ' selected' if @build.label == build.label %>">
+      <%= link_to_build(@project, build) %>
+    </div>
+  <% end %>
+
+  <div id="builds_drop_down">
+    <%= image_tag "spinner.gif" %>
+  </div>
+  
+  <script type="text/javascript">
+
+  <%= remote_function(
+        :update => 'builds_drop_down', :method => "GET",
+        :url => {:action => 'drop_down', :project => @project},  
+        :complete => "selectCurrentBuild()"
+        )%>
+        
+  function selectCurrentBuild() {
+    var build = $('build')
+    if (!build) return true
+    var options = build.options
+    for (var i = 0; options.length > i; i++) {
+        if(options[i].value == '<%= @build.label %>') {
+            build.selectedIndex = i
+            build.options[0] = null
+        }
+    }
+  }
+  </script>
+</div>
+
+<br />
+
+<div id="build_details">
+  <h1>
+    <%= h @project.name %> build <%= h @build.label %>
+    <% if @build.failed? %><span class="error">FAILED</span><% end %>
+    <% if @build.incomplete? %> (INCOMPLETE)<% end %>    
+  </h1>
+  <div class="build_time">
+    <%= display_build_time %>
+  </div>
+
+  <br/>
+
+  <h2>Listing for <%= request.path %></h2>
+    <p>
+      <%= link_to "Up to #{up_path}", up_path %>
+    </p>
+    <% urls.each do |f| %>
+    <p style='float: left; margin-left: 20px; margin-bottom: 20px;'>
+      <% if f.match(/\.(jpg|gif|png)$/) %>
+      <%= link_to File.basename(f), f %><br />
+      <%= link_to image_tag(File.dirname(f)+'/thumbnails/'+File.basename(f), :width=>200), f %>
+      <% else %>
+      <%= link_to File.basename(f), f %>
+      <% end %>
+    </p>
+    <% end %>
+
+
+</div>
+

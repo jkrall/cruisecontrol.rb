@@ -32,6 +32,8 @@ class BuildsController < ApplicationController
     render :text => 'Path not specified', :status => 404 and return unless params[:path]
 
     @project = Projects.find(params[:project])
+    @builds_for_navigation_list = @project.builds.reverse[0, 30]
+
     render :text => "Project #{params[:project].inspect} not found", :status => 404 and return unless @project
     @build = @project.find_build(params[:build])
     render :text => "Build #{params[:build].inspect} not found", :status => 404 and return unless @build
@@ -42,9 +44,9 @@ class BuildsController < ApplicationController
       if File.exists?(path + '/index.html')
         redirect_to :path => File.join(params[:path], 'index.html')
       else
-        # TODO: generate an index from directory contents
-        # render :text => "this should be an index of #{params[:path]}"
-        render :partial=>'builds/directorylist', :locals=>{:rawpath=>params[:path], :path=>path}
+        @rawpath = params[:path]
+        @path = path
+        render
       end
     elsif File.exists? path
       send_file(path, :type => get_mime_type(path), :disposition => 'inline', :stream => false)

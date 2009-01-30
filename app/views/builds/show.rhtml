@@ -79,18 +79,18 @@
     </div>
   <% end %>
 
-  <div class="<%= @build.incomplete? ? 'section_open' : 'section_closed' %>">
-    <div class="section_header" onclick="toggle_section(this.parentNode)">Build Log</div>
-    <div class="section_content"><div class="logfile"><%= format_build_log(@build.output) %></div><div><%= link_to "See unformatted build log&hellip;", build_artifact_path(:project => @project.name, :build => @build.label, :path => 'build.log') %></div></div>
-  </div>
-
   <% unless @build.additional_artifacts.empty? %>
     <div class="section_open">
       <div class="section_header" onclick="toggle_section(this.parentNode)">Custom Build Artifacts</div>
       <div class="section_content"><% @build.additional_artifacts.each do |artifact| %><div class="artifact"><%= link_to artifact, build_artifact_path(:project => @project.name, :build => @build.label, :path => artifact) %></div><% end %></div>
     </div>
   <% end %>
-  
+
+  <div class="<%= @build.incomplete? ? 'section_open' : 'section_closed' %>">
+    <div class="section_header" onclick="toggle_section(this.parentNode)">Build Log</div>
+    <div class="section_content"><div class="logfile"><%= format_build_log(@build.output) %></div><div><%= link_to "See unformatted build log&hellip;", build_artifact_path(:project => @project.name, :build => @build.label, :path => 'build.log') %></div></div>
+  </div>
+
   <div class="section_closed">
     <div class="section_header" onclick="toggle_section(this.parentNode)">Project Settings</div>
     <div class="section_content"><%= format_project_settings(@build.project_settings) %></div>
