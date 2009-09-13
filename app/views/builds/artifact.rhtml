@@ -1,5 +1,5 @@
 <%
-   files = Dir.glob( File.join(@path,'*') )
+   files = Dir.glob( File.join(@path,'*') ).sort{|a,b| File.mtime(b)<=>File.mtime(a)}
    urls = files.collect {|f| request.path + f.sub(@path, '') }.sort
    up_path = request.path.sub(/#{File.basename(request.path)}/,'').sub(/\/+$/,'')
 %>

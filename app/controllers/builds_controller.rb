@@ -44,6 +44,7 @@ class BuildsController < ApplicationController
       if File.exists?(path + '/index.html')
         redirect_to :path => File.join(params[:path], 'index.html')
       else
+        @autorefresh = @build.incomplete?
         @rawpath = params[:path]
         @path = path
         render
