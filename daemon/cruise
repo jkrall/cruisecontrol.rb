@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby
+
+### BEGIN INIT INFO
+# Provides:          cruise
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start cruise at boot time
+# Description:       cruisecontrol.rb daemon
+### END INIT INFO
+
+# Instructions to make cruise run as daemon (and work correctly on reboot):
+# 1. sudo cp CRUISE_HOME/daemon/cruise /etc/init.d/cruise
+# 2. edit /etc/init.d/cruise to 
+#     * include your correct CRUISE_USER and CRUISE_HOME
+#     * ensure that /usr/bin/ruby is executable, or modify the shebang as appropriate 
+# 3. sudo update-rc.d cruise defaults
+# 4. reboot system, verify cruise is running and builds are successful.  If there are problems,
+#    check CRUISE_HOME/log/cruise_daemon_env.log and $CCRB_HOME/log/cruise_daemon_err.log
+
+CRUISE_USER = ENV['CRUISE_USER'] || ENV['USER']
+CRUISE_HOME = ENV['CRUISE_HOME'] || `pwd`.chomp
+
+if !File.exist?(CRUISE_HOME + "/daemon/daemon_helper.rb")
+  raise "CRUISE_HOME was incorrectly set to '#{CRUISE_HOME}.  Please hardcode it in this script, set it as an environment variable, or run this script as 'ci/cruise' from the ccrb project directory"
+end
+
+require CRUISE_HOME + "/daemon/daemon_helper"
+
+command = ARGV.shift
+case command
+when 'start'
+  start_cruise
+when 'stop'
+  stop_cruise
+when 'restart'
+  restart_cruise
+else
+  p "Usage: #{File.dirname(__FILE__)} start|stop|restart"
+  exit 1
+end

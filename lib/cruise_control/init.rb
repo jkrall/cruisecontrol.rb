@@ -1,5 +1,7 @@
 module CruiseControl
   class Init
+    DEFAULT_PORT = 3333
+    DEFAULT_ENV  = 'production'
   
     def run
       command = ARGV.shift
@@ -27,13 +29,23 @@ module CruiseControl
     end
   
     def start
+      unless ARGV.include?('-p') || ARGV.include?('--port')
+        ARGV << '-p'
+        ARGV << DEFAULT_PORT.to_s
+      end
+      
+      unless ARGV.include?('-e') || ARGV.include?('--environment')
+        ARGV << '-e'
+        ARGV << 'production'
+      end
+      
       require File.join(File.dirname(__FILE__), '..', 'platform')
       Platform.running_as_daemon = ARGV.include?('-d') || ARGV.include?('--daemon')
       load File.join(File.dirname(__FILE__), '..', '..', 'script', 'server')
     end
 
     def stop
-      pid_file = File.join("tmp", "pids", "mongrel.pid")
+      pid_file = File.join("tmp", "pids", "server.pid")
       if File.exist?(pid_file)
         exec "mongrel_rails stop -P #{pid_file}"
       end
@@ -50,7 +62,7 @@ module CruiseControl
     def version
       puts <<-EOL
     CruiseControl.rb, version #{CruiseControl::VERSION::STRING}
-    Copyright (C) 2007 ThoughtWorks
+    Copyright (C) 2009 ThoughtWorks
       EOL
     end
   
@@ -67,12 +79,12 @@ module CruiseControl
     Type 'cruise --version' to see the version number.
 
     Available commands:
-      start      - starts the web server
+      start      - starts the web server (port 3333, production environment by default)
       add        - adds a project
       build      - starts the builder for an individual project
 
     CruiseControl.rb is a Continous Integration Server.
-    For additional information, see http://cruisecontrolrb.rubyforge.org/
+    For additional information, see http://cruisecontrolrb.thoughtworks.com/
         EOL
       elsif method_for_command(command)
         self.send(method_for_command(command))

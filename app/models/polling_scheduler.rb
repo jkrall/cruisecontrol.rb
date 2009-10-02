@@ -1,3 +1,5 @@
+# PollingScheduler is a build scheduler that checks the given project's status one per polling
+# interval to determine whether or not it should kick off a new build.
 class PollingScheduler
 
   def initialize(project)
@@ -15,7 +17,7 @@ class PollingScheduler
         throw :reload_project if @project.config_modified?
       rescue => e
         log_error(e) unless (same_error_as_before(e) and last_logged_less_than_an_hour_ago)
-        sleep(Configuration.sleep_after_build_loop_error)
+        sleep(Configuration.sleep_after_build_loop_error.to_i)
       end
     end
   end

@@ -12,4 +12,3 @@ function disableBuildNowButton(button) {
   button.className='build_button_disabled';
   button.disabled = true;
 }
-

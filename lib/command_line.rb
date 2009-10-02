@@ -77,7 +77,7 @@ module CommandLine
 
   def e(cmd, options, &proc)
     full_cmd = full_cmd(cmd, options, &proc)
-    
+
     options[:env].each{|k,v| ENV[k]=v}
     begin
       CruiseControl::Log.debug "#{Platform.prompt} #{format_for_printing(cmd)}" if options[:stdout].nil?
@@ -112,14 +112,16 @@ module CommandLine
     capture_info_command = (block_given? && options[:stdout]) ?
         "echo [output captured and therefore not logged] >> #{options[:stdout]} && " :
         ''
-    cmd = escape_and_concatenate(cmd) unless cmd.is_a? String
 
     stdout_prompt_command = options[:stdout] ?
-                              "echo #{Platform.prompt} #{cmd} >> #{options[:stdout]} && " :
+                              "echo #{Platform.prompt} #{escape_and_concatenate(cmd)} >> #{options[:stdout]} && " :
                               ''
     stderr_prompt_command = options[:stderr] && options[:stderr] != options[:stdout] ?
-                              "echo #{Platform.prompt} #{cmd} >> #{options[:stderr]} && " :
+                              "echo #{Platform.prompt} #{escape_and_concatenate(cmd)} >> #{options[:stderr]} && " :
                               ''
+
+    cmd = escape_and_concatenate(cmd) unless cmd.is_a? String
+
     redirected_command = block_given? ? "#{cmd} #{stderr_opt}" : "#{cmd} #{stdout_opt} #{stderr_opt}"
     stdout_prompt_command + capture_info_command + stderr_prompt_command + redirected_command
   end
@@ -168,9 +170,13 @@ module CommandLine
     [stdout_opt, stderr_opt]
   end
   module_function :redirects
-  
+
   def escape_and_concatenate(cmd)
-    cmd.map { |item| escape(item) }.join(' ')
+    if cmd.is_a?(String)
+      escape(cmd)
+    else
+      cmd.map { |item| escape(item) }.join(' ')
+    end
   end
   module_function :escape_and_concatenate
 
@@ -178,7 +184,7 @@ module CommandLine
     if Platform.family == 'mswin32'
       escaped_characters = /\\|&|\||>|<|\^/
       escape_symbol = '^'
-      quote_argument = (item =~ /\s/) 
+      quote_argument = (item =~ /\s/)
     else
       escaped_characters = /"|'|<|>| |&|\||\(|\)|\\|;/
       escape_symbol = '\\'
@@ -202,5 +208,4 @@ module CommandLine
     end
   end
   module_function :format_for_printing
-  
 end

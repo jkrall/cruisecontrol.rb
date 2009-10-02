@@ -19,6 +19,8 @@ class SourceControl::GitTest < Test::Unit::TestCase
     in_sandbox do
       git = new_git
       git.expects(:git).with("reset", ["--hard", '5460c9ea8872745629918986df7238871f4135ae'])
+      git.expects(:git).with("submodule", ["init"])
+      git.expects(:git).with("submodule", ["update"])
       git.update(Git::Revision.new(:number => '5460c9ea8872745629918986df7238871f4135ae'))
     end
   end
@@ -27,11 +29,13 @@ class SourceControl::GitTest < Test::Unit::TestCase
     in_sandbox do
       git = new_git
       git.expects(:git).with("reset", ["--hard"])
+      git.expects(:git).with("submodule", ["init"])
+      git.expects(:git).with("submodule", ["update"])
       git.update
     end
   end
 
-  def test_up_to_date?_should_return_false_if_there_are_new_revisions
+  def test_up_to_date_should_return_false_if_there_are_new_revisions
     in_sandbox do
       git = new_git
       mock_revisions(git, [:new_revision])
@@ -42,7 +46,7 @@ class SourceControl::GitTest < Test::Unit::TestCase
     end
   end
 
-  def test_up_to_date?_should_return_true_if_there_are_no_new_revisions
+  def test_up_to_date_should_return_true_if_there_are_no_new_revisions
     in_sandbox do
       git = new_git
       mock_revisions(git, [])
@@ -65,26 +69,91 @@ class SourceControl::GitTest < Test::Unit::TestCase
     end
   end
 
+  def test_checkout_with_branch_should_perform_git_clone_branch_and_checkout
+    in_sandbox do
+      git = new_git(:repository => "git:/my_repo", :branch => "mybranch")
+      git.expects(:git).with("clone", ["git:/my_repo", '.'], :execute_in_project_directory => false)
+      git.expects(:git).with("branch", ["--track", 'mybranch', 'origin/mybranch'])
+      git.expects(:git).with("checkout", ["-q", 'mybranch'])
+      git.checkout
+    end
+  end
+
+  def test_checkout_with_master_branch_explicitly_specified_should_not_perform_git_branch_and_checkout
+    in_sandbox do
+      git = new_git(:repository => "git:/my_repo", :branch => "master")
+      git.expects(:git).with("clone", ["git:/my_repo", '.'], :execute_in_project_directory => false)
+      git.checkout
+    end
+  end
+
   def test_checkout_should_blow_up_when_repository_was_not_given_to_the_ctor
     in_sandbox do
       git = Git.new(:repository => nil)
       git.expects(:git).never
 
-      assert_raises(RuntimeError) { git.checkout }
+      assert_raise(RuntimeError) { git.checkout }
     end
   end
 
   def test_latest_revision_should_call_git_log_and_send_it_to_parser
     in_sandbox do
       git = new_git
+      git.expects(:git).with('fetch', ['origin'])
       git.expects(:git).with("branch").yields(StringIO.new("* master\n"))
       git.expects(:git).with("log", ["-1", '--pretty=raw', "--stat", 'origin/master']).returns('')
-      git.expects(:git).with('fetch', ['origin'])
       stub_parser = Object.new
       stub_parser.stubs(:parse).returns([:foo])
       Git::LogParser.expects(:new).returns(stub_parser)
 
       assert_equal :foo, git.latest_revision
+    end
+  end
+
+  def test_latest_revision_should_timeout
+    in_sandbox do
+      git = new_git
+      class << git
+        def git(*args)
+          sleep 1
+        end
+      end
+      
+      begin
+        old_timeout = Configuration.git_load_new_changesets_timeout
+        Configuration.git_load_new_changesets_timeout = 0.5
+
+        assert_raise(BuilderError) do
+          begin
+            git.latest_revision
+          rescue BuilderError => e
+            assert_equal "Timeout in 'git fetch origin'", e.message
+            raise e
+          end
+        end
+      ensure
+        Configuration.git_load_new_changesets_timeout = old_timeout
+      end
+    end
+  end
+
+  def test_latest_revision__should_reraise_any_builder_error_without_modification
+    in_sandbox do
+      git = new_git
+      class << git
+        def git(*args)
+          raise BuilderError.new('This is a BuilderError, just reraise it')
+        end
+      end
+      
+      assert_raise(BuilderError) do
+        begin
+          git.latest_revision
+        rescue BuilderError => e
+          assert_equal 'This is a BuilderError, just reraise it', e.message
+          raise e
+        end
+      end
     end
   end
 

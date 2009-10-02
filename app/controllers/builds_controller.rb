@@ -1,14 +1,14 @@
 class BuildsController < ApplicationController
   caches_page :drop_down
-  
+
   def show
     render :text => 'Project not specified', :status => 404 and return unless params[:project]
-    @project = Projects.find(params[:project])
+    @project = Project.find(params[:project])
     render :text => "Project #{params[:project].inspect} not found", :status => 404 and return unless @project
 
     if params[:build]
       @build = @project.find_build(params[:build])
-      render :text => "Build #{params[:build].inspect} not found", :status => 404 and return if @build.nil? 
+      render :text => "Build #{params[:build].inspect} not found", :status => 404 and return if @build.nil?
     else
       @build = @project.last_build
       render :action => 'no_builds_yet' and return if @build.nil?
@@ -21,28 +21,27 @@ class BuildsController < ApplicationController
 
   def drop_down
     render :text => 'Project not specified', :status => 404 and return unless params[:project]
-    @project = Projects.find(params[:project])
+    @project = Project.find(params[:project])
     @builds_for_dropdown = @project.builds.reverse[30..-1]
     render :layout => false
   end
-  
+
   def artifact
     render :text => 'Project not specified', :status => 404 and return unless params[:project]
     render :text => 'Build not specified', :status => 404 and return unless params[:build]
     render :text => 'Path not specified', :status => 404 and return unless params[:path]
 
-    @project = Projects.find(params[:project])
-    @builds_for_navigation_list = @project.builds.reverse[0, 30]
+    @project = Project.find(params[:project])
 
     render :text => "Project #{params[:project].inspect} not found", :status => 404 and return unless @project
     @build = @project.find_build(params[:build])
     render :text => "Build #{params[:build].inspect} not found", :status => 404 and return unless @build
 
-    path = File.join(@build.artifacts_directory, params[:path])
+    path = @build.artifact(params[:path])
 
     if File.directory? path
-      if File.exists?(path + '/index.html')
-        redirect_to :path => File.join(params[:path], 'index.html')
+      if File.exists?(File.join(path, 'index.html'))
+        redirect_to request.request_uri + '/index.html'
       else
         @autorefresh = @build.incomplete?
         @rawpath = params[:path]
@@ -55,7 +54,7 @@ class BuildsController < ApplicationController
       render_not_found
     end
   end
-  
+
   private
   def get_mime_type(name)
     case name.downcase

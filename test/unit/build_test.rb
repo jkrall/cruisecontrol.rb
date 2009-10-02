@@ -1,6 +1,6 @@
 require File.dirname(__FILE__) + '/../test_helper'
 
-class BuildTest < Test::Unit::TestCase
+class BuildTest < ActiveSupport::TestCase
   include FileSandbox
 
   def test_build_should_know_if_it_is_the_latest

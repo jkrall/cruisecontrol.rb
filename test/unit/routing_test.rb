@@ -1,6 +1,6 @@
 require File.dirname(__FILE__) + '/../test_helper'
 
-class RoutingTest < Test::Unit::TestCase
+class RoutingTest < ActionController::TestCase
   def test_build
     assert_routing 'builds/CruiseControl', {:controller => 'builds', :action => 'show', :project => 'CruiseControl'}
     assert_routing 'builds/CruiseControl/1', 
@@ -13,6 +13,5 @@ class RoutingTest < Test::Unit::TestCase
     assert_routing 'builds/CruiseControl/1.2/this/stuff.rb', 
                     {:controller => 'builds', :action => 'artifact', :project => 'CruiseControl', :build => '1.2', 
                      :path => ['this', 'stuff.rb']}
-
   end
 end

@@ -15,7 +15,7 @@ if ARGV.first and ARGV.first !~ /^-/
 end
 
 ARGV.options do |opts|
-  opts.banner = "usage: cruise add <project-name> --url <source control URL> [source control options]"
+  opts.banner = "usage: add [project-name] -r [repository] -s [svn|git|hg|bzr]"
 
   opts.separator ""
 
@@ -70,11 +70,9 @@ begin
 
   source_control = SourceControl.create(scm_options)
 
-  project = Project.new(project_name, source_control)
-	projects = Projects.load_all
-	projects << project
-	
-	if source_control.repository =~ /^svn\+ssh\:\/\//
+  Project.create(project_name, source_control)
+  
+  if source_control.repository =~ /^svn\+ssh\:\/\//
     puts "IMPORTANT!!! - It looks like you are connecting to your repository with an svn+ssh connection.  " +
          "For cruise to build this project, you need to have set up authentication caching for ssh, see this article"
     puts "   http://subversion.tigris.org/faq.html#ssh-auth-cache"

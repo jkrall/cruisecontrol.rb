@@ -23,7 +23,7 @@ class EmailNotifierTest < Test::Unit::TestCase
     @notifier.emails = ["jeremystellsmith@gmail.com", "jeremy@thoughtworks.com"]
     @notifier.from = 'cruisecontrol@thoughtworks.com'
     
-    @project.add_plugin(@notifier)
+    @project.add_plugin(@notifier, :test_email_notifier)
   end
   
   def teardown
@@ -61,34 +61,28 @@ class EmailNotifierTest < Test::Unit::TestCase
     BuildMailer.expects(:deliver_build_report)
     @notifier.emails = ['foo@happy.com', 'bar@feet.com', 'you@me.com', 'uncle@tom.com']
     @notifier.build_finished(failing_build)
-    BuildMailer.verify
-    CruiseControl::Log.verify
 
     CruiseControl::Log.expects(:event).with("Sent e-mail to 1 person", :debug)
     BuildMailer.expects(:deliver_build_report)
     @notifier.emails = ['foo@happy.com']
     @notifier.build_finished(failing_build)
-    BuildMailer.verify
-    CruiseControl::Log.verify
 
     CruiseControl::Log.expects(:event).never
     BuildMailer.expects(:deliver_build_report).never
     @notifier.emails = []
     @notifier.build_finished(failing_build)
-    BuildMailer.verify
-    CruiseControl::Log.verify
   end
   
   def test_useful_errors
     ActionMailer::Base.stubs(:smtp_settings).returns(:foo => 5)
     CruiseControl::Log.expects(:event).with("Error sending e-mail - current server settings are :\n  :foo = 5", :error)
-    BuildMailer.expects(:deliver_build_report).raises('something')
+    BuildMailer.expects(:deliver_build_report).raises('oh noes!')
     
     @notifier.emails = ['foo@crapty.com']
-
-    # FIXME: how does this 'something' match? Something must be wrong with assert_raises 
-    assert_raises('something') { @notifier.build_finished(failing_build) }
-    CruiseControl::Log.verify
+    
+    assert_raise_with_message(RuntimeError, 'oh noes!') do
+      @notifier.build_finished(failing_build)
+    end
   end
 
   def test_configuration_email_from_should_be_used_when_notifier_from_is_not_specified

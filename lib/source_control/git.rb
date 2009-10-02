@@ -23,18 +23,11 @@ module SourceControl
       FileUtils.rm_rf(path)
 
       # need to read from command output, because otherwise tests break
-      git('clone', [@repository, path], :execute_in_project_directory => false) do |io|
-        begin
-          while line = io.gets
-            stdout.puts line
-          end
-        rescue EOFError
-        end
-      end
+      git('clone', [@repository, path], :execute_in_project_directory => false)
 
-      if @branch
-        git('branch', ['--track', @branch, "origin/#@branch"])
-        git('checkout', [@branch])
+      if @branch and @branch != 'master'
+        git('branch', ['--track', @branch, "origin/#{@branch}"])
+        git('checkout', ['-q', @branch]) # git prints 'Switched to branch "branch"' to stderr unless you pass -q
       end
       git("reset", ['--hard', revision.number]) if revision
 
@@ -61,9 +54,7 @@ module SourceControl
       else
         git("reset", ["--hard"])
       end
-      if @include_submodules
-        git("submodule",["update"])
-      end
+      git_update_submodule
     end
 
     def up_to_date?(reasons = [])
@@ -94,7 +85,7 @@ module SourceControl
     end
 
     protected
-    
+
     def filter_revisions_by_subdirectory(revisions, subdir)
       revisions.find_all do |revision|
         if revision.changeset
@@ -109,7 +100,11 @@ module SourceControl
     end
 
     def load_new_changesets_from_origin
-      git("fetch", ["origin"])
+      Timeout.timeout(Configuration.git_load_new_changesets_timeout, Timeout::Error) do
+        git("fetch", ["origin"])
+      end
+    rescue Timeout::Error => e
+      raise BuilderError.new("Timeout in 'git fetch origin'")
     end
 
     def git(operation, arguments = [], options = {}, &block)
@@ -118,6 +113,13 @@ module SourceControl
 #      command << "--non-interactive" unless @interactive
 
       execute_in_local_copy(command, options, &block)
+    end
+
+    private
+
+    def git_update_submodule
+      git("submodule", ["init"])
+      git("submodule", ["update"])
     end
 
   end

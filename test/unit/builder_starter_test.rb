@@ -1,6 +1,4 @@
 require File.dirname(__FILE__) + '/../test_helper'
-require 'builder_starter'
-require 'project'
 
 class BuilderStarterTest < Test::Unit::TestCase
   include FileSandbox
@@ -12,7 +10,7 @@ class BuilderStarterTest < Test::Unit::TestCase
   end
   
   def test_start_builders_should_begin_builder_for_each_project
-    Projects.expects(:load_all).returns([@one, @two])
+    Project.expects(:all).returns([@one, @two])
     
     BuilderStarter.expects(:begin_builder).with(@one.name)
     BuilderStarter.expects(:begin_builder).with(@two.name)

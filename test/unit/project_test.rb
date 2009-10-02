@@ -1,10 +1,6 @@
 require File.expand_path(File.dirname(__FILE__) + '/../test_helper')
-require 'date'
-require 'ostruct'
-require 'email_notifier'
-require 'fileutils'
 
-class ProjectTest < Test::Unit::TestCase
+class ProjectTest < ActiveSupport::TestCase
   include FileSandbox
   include SourceControl
 
@@ -51,6 +47,21 @@ class ProjectTest < Test::Unit::TestCase
       assert_nil @project.last_complete_build
     end
   end
+  
+  def test_previously_built_should_return_true_if_there_is_a_complete_build
+    in_sandbox do |sandbox|
+      @project.path = sandbox.root
+      sandbox.new :directory => "build-1-success.in1s/"
+      assert @project.previously_built?
+    end
+  end
+  
+  def test_previously_built_should_return_false_if_there_are_no_previous_builds
+    in_sandbox do |sandbox|
+      @project.path = sandbox.root
+      assert !@project.previously_built?
+    end    
+  end
 
   def test_builds_should_return_empty_array_when_project_has_no_builds
     in_sandbox do |sandbox|
@@ -67,6 +78,7 @@ class ProjectTest < Test::Unit::TestCase
       build = new_mock_build('5')
 
       build.stubs(:artifacts_directory).returns(sandbox.root)
+      build.stubs(:successful?).returns(true)
       
       @project.stubs(:builds).returns([])
       @project.stubs(:config_modified?).returns(false)
@@ -124,7 +136,7 @@ class ProjectTest < Test::Unit::TestCase
       listener = Object.new
       listener.expects(:build_loop_failed).with(error)
       @project.add_plugin listener
-      assert_raises(error) { @project.build_if_necessary }
+      assert_raise(StandardError) { @project.build_if_necessary }
     end
   end
   
@@ -135,7 +147,9 @@ class ProjectTest < Test::Unit::TestCase
       error = StandardError.new("something bad happened")
       @project.expects(:update_project_to_revision).raises(error)
 
-      assert_raises(error) { @project.build(new_revision(5)) }
+      assert_raise_with_message(StandardError, "something bad happened") do
+        @project.build(new_revision(5))
+      end
       
       build = @project.builds.first
       assert build.failed?
@@ -208,13 +222,17 @@ class ProjectTest < Test::Unit::TestCase
       
       mock_build = Object.new
       mock_build.stubs(:artifacts_directory).returns(sandbox.root)
+      mock_build.stubs(:label).returns("1")
+      mock_build.stubs(:successful?).returns(true)
 
       listener = Object.new
       listener.expects(:build_finished).with(mock_build).raises(StandardError.new("Listener failed"))
 
       @project.add_plugin listener
 
-      assert_raises('Error in plugin Object: Listener failed') { @project.notify(:build_finished, mock_build) }
+      assert_raise_with_message(RuntimeError, 'Error in plugin Object: Listener failed') do
+        @project.notify(:build_finished, mock_build)
+      end
 
       assert_match /^Listener failed at/, File.read("#{mock_build.artifacts_directory}/plugin_errors.log")
     end
@@ -227,11 +245,16 @@ class ProjectTest < Test::Unit::TestCase
       listener = Object.new
       listener.expects(:sleeping).raises(StandardError.new("Listener failed"))
       listener.expects(:doing_something).with(:foo).raises(StandardError.new("Listener failed with :foo"))
+      BuilderPlugin.stubs(:known_event?).returns true
 
       @project.add_plugin listener
 
-      assert_raises('Error in plugin Object: Listener failed') { @project.notify(:sleeping) }
-      assert_raises('Error in plugin Object: Listener failed with :foo') { @project.notify(:doing_something, :foo) }
+      assert_raise_with_message(RuntimeError, 'Error in plugin Object: Listener failed') do
+        @project.notify(:sleeping)
+      end
+      assert_raise_with_message(RuntimeError, 'Error in plugin Object: Listener failed with :foo') do
+        @project.notify(:doing_something, :foo)
+      end
     end
   end
 
@@ -276,6 +299,7 @@ class ProjectTest < Test::Unit::TestCase
       build = new_mock_build('2')
       @project.stubs(:last_build).returns(nil)
       build.stubs(:artifacts_directory).returns(sandbox.root)      
+      build.stubs(:successful?).returns(true)
       @svn.stubs(:up_to_date?).with([]).returns(false)
       @svn.expects(:update).with(revision)
       @svn.expects(:latest_revision).returns(revision)
@@ -301,28 +325,31 @@ class ProjectTest < Test::Unit::TestCase
   
   def test_either_rake_task_or_build_command_can_be_set_but_not_both
     @project.rake_task = 'foo'
-    assert_raises("Cannot set build_command when rake_task is already defined") do
+    assert_raise_with_message(RuntimeError, "Cannot set build_command when rake_task is already defined") do
       @project.build_command = 'foo'
     end
 
     @project.rake_task = nil
     @project.build_command = 'foo'
-    assert_raises("Cannot set rake_task when build_command is already defined") do
+    assert_raise_with_message(RuntimeError, "Cannot set rake_task when build_command is already defined") do
       @project.rake_task = 'foo'
     end
   end
 
   def test_notify_should_handle_plugin_error
+    BuilderPlugin.expects(:known_event?).with(:hey_you).returns true
     plugin = Object.new
-    
     @project.plugins << plugin
     
     plugin.expects(:hey_you).raises("Plugin talking")
     
-    assert_raises("Error in plugin Object: Plugin talking") { @project.notify(:hey_you) }
+    assert_raise_with_message(RuntimeError, "Error in plugin Object: Plugin talking") do
+      @project.notify(:hey_you)
+    end
   end
 
   def test_notify_should_handle_multiple_plugin_errors
+    BuilderPlugin.stubs(:known_event?).with(:hey_you).returns true
     plugin1 = Object.new
     plugin2 = Object.new
     
@@ -331,7 +358,9 @@ class ProjectTest < Test::Unit::TestCase
     plugin1.expects(:hey_you).raises("Plugin 1 talking")
     plugin2.expects(:hey_you).raises("Plugin 2 talking")
 
-    assert_raises("Errors in plugins:\n  Object: Plugin 1 talking\n  Object: Plugin 2 talking") { @project.notify(:hey_you) }
+    assert_raise_with_message(RuntimeError, "Errors in plugins:\n  Object: Plugin 1 talking\n  Object: Plugin 2 talking") do
+      @project.notify(:hey_you)
+    end
   end
 
   def test_request_build_should_start_builder_if_builder_was_down
@@ -376,11 +405,23 @@ class ProjectTest < Test::Unit::TestCase
   def test_build_if_requested_should_build_if_build_requested_file_exists
     in_sandbox do |sandbox|      
       @project.path = sandbox.root
+      revision = @project.source_control.add_revision :message => "A super special feature", :number => 1
+      
+      sandbox.new :file => 'build_requested'
+      @project.stubs(:remove_build_requested_flag_file)
+      @project.expects(:build).with(revision, ['Build was manually requested.', '1: A super special feature'])
+      @project.build_if_requested
+    end
+  end
+  
+  def test_build_if_requested_should_specify_build_requested_reason
+    in_sandbox do |sandbox|      
+      @project.path = sandbox.root
       sandbox.new :file => 'build_requested'
       @project.expects(:remove_build_requested_flag_file)
       @project.expects(:build)
       @project.build_if_requested
-    end
+    end    
   end
     
   def test_build_requested
@@ -389,19 +430,19 @@ class ProjectTest < Test::Unit::TestCase
     assert @project.build_requested?
   end
   
-  def test_build_should_generate_new_label_if_same_name_label_exists    
+  def test_build_should_generate_new_label_if_same_name_label_exists
     existing_build1 = stub_build('20')
     existing_build2 = stub_build('20.1')
     new_build = stub_build('20.2')
     new_build_with_interesting_number = stub_build('2')
-                 
+
     project = Project.new('project1', @svn)
     @svn.stubs(:update)
-    project.stubs(:log_changeset) 
+    project.stubs(:log_changeset)
     project.stubs(:builds).returns([existing_build1, existing_build2])
-    project.stubs(:last_build).returns(nil) 
+    project.stubs(:last_build).returns(nil)
     project.stubs(:new_revisions).returns(nil)
-         
+    
     Build.expects(:new).with(project, '20.2').returns(new_build) 
     project.build(new_revision(20))
 
@@ -634,28 +675,141 @@ class ProjectTest < Test::Unit::TestCase
     assert_equal(File.expand_path("foo/work"), @svn.path)
   end
   
+  def test_plugins_should_be_accessible_by_their_name
+    plugin = BuildReaper.new(@project)
+    @project.add_plugin plugin
+    assert_equal plugin, @project.build_reaper
+  end
+  
+  def test_adding_a_plugin_should_raise_exception_if_already_configured
+    assert_raise RuntimeError do
+      @project.add_plugin BuildReaper.new(@project)
+      @project.add_plugin BuildReaper.new(@project)
+    end
+  end
+  
+  def test_notifying_project_of_an_unknown_event_raises_exception
+    BuilderPlugin.expects(:known_event?).returns false
+    assert_raise RuntimeError do
+      @project.notify :some_random_event
+    end
+  end
+  
+  def test_project_all_should_return_all_existing_projects
+    svn = FakeSourceControl.new("bob")
+    one = Project.new("one", @svn)
+    two = Project.new("two", @svn)
+    
+    in_sandbox do |sandbox|
+      sandbox.new :file => "one/cruise_config.rb", :with_content => ""
+      sandbox.new :file => "two/cruise_config.rb", :with_content => ""
+      assert_equal %w(one two), Project.all(sandbox.root).map(&:name)
+    end
+  end
+
+  def test_project_all_should_always_reload_project_objects
+    svn = FakeSourceControl.new("bob")
+    one = Project.new("one", @svn)
+    two = Project.new("two", @svn)
+    
+    in_sandbox do |sandbox|
+      sandbox.new :file => "one/cruise_config.rb", :with_content => ""
+      sandbox.new :file => "two/cruise_config.rb", :with_content => ""
+      old_projects = Project.all(sandbox.root)
+      
+      sandbox.new :file => "three/cruise_config.rb", :with_content => ""
+      current_projects = Project.all(sandbox.root)
+      
+      assert_not_equal old_projects, current_projects
+      assert_not_same old_projects.first, current_projects.first
+    end
+  end
+  
+  test "Project.load_project should load the project in the given directory" do
+    in_sandbox do |sandbox|
+      sandbox.new :file => 'one/cruise_config.rb', :with_content => ''
+
+      new_project = Project.load_project(File.join(sandbox.root, 'one'))
+
+      assert_equal('one', new_project.name)
+      assert_equal(File.join(sandbox.root, 'one'), new_project.path)
+    end
+  end
+
+  test "Project.load_project should load a project without any configuration" do
+    in_sandbox do |sandbox|
+      sandbox.new :directory => "myproject/work/.svn"
+      sandbox.new :directory => "myproject/builds-1"
+
+      new_project = Project.load_project(sandbox.root + '/myproject')
+
+      assert_equal("myproject", new_project.name)
+      assert_equal(SourceControl::Subversion, new_project.source_control.class)
+      assert_equal(sandbox.root + "/myproject", new_project.path)
+    end
+  end
+  
+  test "Project.create should add a new project" do
+    in_sandbox do |sandbox|
+      Project.create "one", @svn, sandbox.root
+      Project.create "two", @svn, sandbox.root
+      assert_equal %w(one two), Project.all(sandbox.root).map(&:name)
+    end
+  end
+
+  test "Project.create should check out an existing project" do
+    in_sandbox do |sandbox|
+      Project.create "one", @svn, sandbox.root
+      assert SandboxFile.new('one/work').exists?
+      assert SandboxFile.new('one/work/README').exists?
+    end
+  end
+
+  test "Project.create should clean up after itself if the source control throws an exception" do
+    in_sandbox do |sandbox|
+      @svn.expects(:checkout).raises("svn error")
+
+      assert_raise RuntimeError, 'svn error' do
+        Project.create "one", @svn, sandbox.root
+      end
+      
+      assert_false SandboxFile.new('one/work').exists?
+      assert_false SandboxFile.new('one').exists?
+    end
+  end
+
+  test "Project.create should not allow you to add the same project twice" do
+    in_sandbox do |sandbox|
+      project = Project.create "one", @svn, sandbox.root
+      assert_raise RuntimeError, "Project named \"one\" already exists in #{sandbox.root}" do
+        Project.create "one", @svn, sandbox.root
+      end
+      assert File.directory?(project.path), "Project directory does not exist."
+    end
+  end
+  
   private
   
-  def stub_build(label)
-    build = Object.new
-    build.stubs(:label).returns(label)
-    build.stubs(:artifacts_directory).returns("project1/build-#{label}")
-    build.stubs(:run)
-    build.stubs(:successful?).returns(true)
-    build
-  end
+    def stub_build(label)
+      stub(
+        :label => label, 
+        :artifacts_directory => "project1/build-#{label}", 
+        :successful? => true, 
+        :run => nil
+      )
+    end
 
-  def new_revision(number)
-    SourceControl::Subversion::Revision.new(number, 'alex', DateTime.new(2005, 1, 1), 'message', [])
-  end
+    def new_revision(number)
+      SourceControl::Subversion::Revision.new(number, 'alex', DateTime.new(2005, 1, 1), 'message', [])
+    end
 
-  def new_mock_build(label)
-    build = Object.new
-    Build.expects(:new).with(@project, label).returns(build)
-    build.stubs(:artifacts_directory).returns("project1/build-#{label}")
-    build.stubs(:last).returns(nil)
-    build.stubs(:label).returns(label)
-    build
-  end  
+    def new_mock_build(label)
+      build = Object.new
+      Build.expects(:new).with(@project, label).returns(build)
+      build.stubs(:artifacts_directory).returns("project1/build-#{label}")
+      build.stubs(:last).returns(nil)
+      build.stubs(:label).returns(label)
+      build.stubs(:successful?).returns(true)
+      build
+    end
 end
-

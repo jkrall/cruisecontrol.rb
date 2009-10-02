@@ -1,15 +1,10 @@
 require File.dirname(__FILE__) + '/../test_helper'
 
-class SubversionIntegrationTest < Test::Unit::TestCase
+class SubversionIntegrationTest < ActiveSupport::TestCase
   include FileSandbox
-  
-  def setup
-    setup_sandbox
-  end
-  
-  def teardown
-    teardown_sandbox
-  end
+
+  setup :setup_sandbox
+  teardown :teardown_sandbox
   
   def test_checkout
     checkout 'passing_project'
@@ -21,7 +16,7 @@ class SubversionIntegrationTest < Test::Unit::TestCase
 
     SourceControl::Subversion.new(:path => 'passing_project').latest_revision
     SourceControl::Subversion.new(:path => 'foo', :repository => fixture_repository_url).latest_revision
-    assert_raises { Subversion.new(:path => 'foo').latest_revision }
+    assert_raise(Errno::ENOENT) { SourceControl::Subversion.new(:path => 'foo').latest_revision }
   end
   
   def test_up_to_date

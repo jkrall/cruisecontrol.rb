@@ -7,19 +7,13 @@ class ProjectsController
   def rescue_action(e) raise end
 end
 
-class ProjectsControllerTest < Test::Unit::TestCase
+class ProjectsControllerTest < ActionController::TestCase
   include FileSandbox
-
-  def setup
-    @controller = ProjectsController.new
-    @request    = ActionController::TestRequest.new
-    @response   = ActionController::TestResponse.new
-  end
 
   def test_index_rhtml  
     p1 = create_project_stub('one', 'success')
     p2 = create_project_stub('two', 'failed', [create_build_stub('1', 'failed')])
-    Projects.expects(:load_all).returns([p1, p2])
+    Project.expects(:all).returns([p1, p2])
     stub_change_set_parser
     
     get :index
@@ -28,7 +22,7 @@ class ProjectsControllerTest < Test::Unit::TestCase
   end
   
   def test_index_rjs
-    Projects.expects(:load_all).returns([create_project_stub('one'), create_project_stub('two')])
+    Project.expects(:all).returns([create_project_stub('one'), create_project_stub('two')])
     
     post :index, :format => 'js'
 
@@ -38,7 +32,7 @@ class ProjectsControllerTest < Test::Unit::TestCase
   end
 
   def test_index_rss
-    Projects.expects(:load_all).returns([
+    Project.expects(:all).returns([
         create_project_stub('one', 'success', [create_build_stub('10', 'success')]),
         create_project_stub('two')])
 
@@ -56,7 +50,7 @@ class ProjectsControllerTest < Test::Unit::TestCase
   end
   
   def test_rss_should_exclude_incomplete_build
-    Projects.expects(:load_all).returns([
+    Project.expects(:all).returns([
         create_project_stub('one', 'success', [create_build_stub('1', 'success')]),
         create_project_stub('two', 'incomplete', [create_build_stub('10', 'failed'), create_build_stub('11', 'incomplete')])
         ])
@@ -67,7 +61,7 @@ class ProjectsControllerTest < Test::Unit::TestCase
   end
   
   def test_should_be_able_to_provide_rss_for_single_project
-    Projects.expects(:find).with('one').returns(create_project_stub('one', 'success', [create_build_stub('10', 'success')]))
+    Project.expects(:find).with('one').returns(create_project_stub('one', 'success', [create_build_stub('10', 'success')]))
     get :show, :id => 'one', :format => 'rss'
     assert_response :success
     assert_template 'show_rss'
@@ -77,14 +71,14 @@ class ProjectsControllerTest < Test::Unit::TestCase
   end
 
   def test_dashboard_should_have_link_to_single_project
-    Projects.expects(:load_all).returns([create_project_stub('one', 'success')])
+    Project.expects(:all).returns([create_project_stub('one', 'success')])
     get :index
     assert_tag :tag => "a", :attributes => {:href => /\/projects\/one/}, :content => "one"
   end
   
   def test_dashboard_should_have_button_to_start_builder_if_builder_is_down
     project = create_project_stub('one', 'success')
-    Projects.stubs(:load_all).returns([project])
+    Project.stubs(:all).returns([project])
     
     project.stubs(:builder_state_and_activity).returns("builder_down")
     get :index
@@ -97,14 +91,14 @@ class ProjectsControllerTest < Test::Unit::TestCase
 
   def test_show_action_with_html_format_should_redirect_to_builds_show
     stub_project = Object.new
-    Projects.expects(:find).with('one').returns(stub_project)
+    Project.expects(:find).with('one').returns(stub_project)
     get :show, :id => 'one'
     assert_response :redirect
     assert_redirected_to :controller => "builds", :action => "show", :project => stub_project
   end
 
   def test_index_cctray
-    Projects.expects(:load_all).returns([
+    Project.expects(:all).returns([
         create_project_stub('one', 'success', [create_build_stub('10', 'success')]),
         create_project_stub('two')])
 
@@ -129,7 +123,7 @@ class ProjectsControllerTest < Test::Unit::TestCase
   end
 
   def test_index_cctray_should_exclude_incomplete_build
-    Projects.expects(:load_all).returns([
+    Project.expects(:all).returns([
         create_project_stub('one', 'failed', [create_build_stub('10', 'failed'), create_build_stub('11', 'incomplete')])
         ])
 
@@ -149,7 +143,7 @@ class ProjectsControllerTest < Test::Unit::TestCase
       project.path = sandbox.root
       sandbox.new :file => 'work/app/controller/FooController.rb', :with_contents => "class FooController\nend\n"
       
-      Projects.expects(:find).returns(project)
+      Project.expects(:find).returns(project)
     
       get :code, :id => 'two', :path => ['app', 'controller', 'FooController.rb'], :line => 2
       
@@ -159,7 +153,7 @@ class ProjectsControllerTest < Test::Unit::TestCase
   end
 
   def test_code_url_not_fully_specified
-    Projects.expects(:find).never
+    Project.expects(:find).never
 
     get :code, :path => ['foo'], :line => 1
     assert_response 404
@@ -171,7 +165,7 @@ class ProjectsControllerTest < Test::Unit::TestCase
   end
 
   def test_code_non_existant_project
-    Projects.expects(:find).with('foo').returns(nil)
+    Project.expects(:find).with('foo').returns(nil)
     get :code, :id => 'foo', :path => ['foo.rb'], :line => 1
     assert_response 404
   end
@@ -180,7 +174,7 @@ class ProjectsControllerTest < Test::Unit::TestCase
     in_sandbox do |sandbox|
       project = Project.new('project')
       project.path = sandbox.root
-      Projects.expects(:find).with('project').returns(project)
+      Project.expects(:find).with('project').returns(project)
 
       get :code, :id => 'project', :path => ['foo.rb'], :line => 1
       assert_response 404
@@ -189,15 +183,16 @@ class ProjectsControllerTest < Test::Unit::TestCase
 
   def test_build_should_request_build
     project = create_project_stub('two')
-    Projects.expects(:find).with('two').returns(project)
+    Project.expects(:find).with('two').returns(project)
     project.expects(:request_build)
+    Project.stubs(:all).returns [ project ]
     post :build, :id => "two"
     assert_response :success
     assert_equal 'two', assigns(:project).name
   end
   
   def test_build_non_existant_project
-    Projects.expects(:find).with('non_existing_project').returns(nil)
+    Project.expects(:find).with('non_existing_project').returns(nil)
     post :build, :id => "non_existing_project"
     assert_response 404
   end
@@ -209,7 +204,7 @@ class ProjectsControllerTest < Test::Unit::TestCase
   end
 
   def test_show_non_existant_project
-    Projects.expects(:find).with('non_existing_project').returns(nil)
+    Project.expects(:find).with('non_existing_project').returns(nil)
     post :show, :id => "non_existing_project", :format => 'rss'
     assert_response 404
     assert_equal 'Project "non_existing_project" not found', @response.body
@@ -217,7 +212,7 @@ class ProjectsControllerTest < Test::Unit::TestCase
 
   def test_should_disable_build_now_button_if_configured_to_do_so
     Configuration.stubs(:disable_build_now).returns(true)
-    Projects.expects(:load_all).returns([create_project_stub('one', 'success')])
+    Project.expects(:all).returns([create_project_stub('one', 'success')])
     get :index
     assert_tag :tag => "button", :attributes => {:onclick => /return false;/}
   end

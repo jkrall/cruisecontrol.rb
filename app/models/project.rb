@@ -1,36 +1,96 @@
-require 'fileutils'
-
+# A Project represents a particular CI build of a particular codebase. An instance is created 
+# each time a build is triggered and yielded back to be configured by cruise_config.rb.
 class Project
-  @@plugin_names = []
-
-  def self.plugin(plugin_name)
-    @@plugin_names << plugin_name unless RAILS_ENV == 'test' or @@plugin_names.include? plugin_name
-  end
-
-  def self.read(dir, load_config = true)
-    @project_in_the_works = Project.new(File.basename(dir))
-    begin
-      @project_in_the_works.load_config if load_config
-      return @project_in_the_works
-    ensure
-      @project_in_the_works = nil
-    end
-  end
-  
-  def self.configure
-    raise 'No project is currently being created' unless @project_in_the_works
-    yield @project_in_the_works
-  end
-
   attr_reader :name, :plugins, :build_command, :rake_task, :config_tracker, :path, :settings, :config_file_content, :error_message
   attr_accessor :source_control, :scheduler
+  
+  class << self
+    attr_accessor_with_default :plugin_names, []
+    attr_accessor :current_project
+    
+    def all(dir=CRUISE_DATA_ROOT + "/projects")
+      load_all(dir).map do |project_dir|
+        load_project project_dir
+      end
+    end
+    
+    def create(project_name, scm, dir=CRUISE_DATA_ROOT + "/projects")
+      returning(Project.new(project_name, scm)) do |project|
+        raise "Project named #{project.name.inspect} already exists in #{dir}" if Project.all(dir).include?(project)
+        begin
+          save_project(project, dir)
+          checkout_local_copy(project)
+          write_config_example(project)
+        rescue
+          FileUtils.rm_rf "#{dir}/#{project.name}"
+          raise
+        end
+      end
+    end
+    
+    def plugin(plugin_name)
+      self.plugin_names << plugin_name unless RAILS_ENV == 'test' or self.plugin_names.include? plugin_name
+    end
 
+    def read(dir, load_config = true)
+      returning Project.new(File.basename(dir)) do |project|
+        self.current_project = project
+        project.load_config if load_config
+      end
+    ensure
+      self.current_project = nil
+    end
+
+    def configure
+      raise 'No project is currently being created' if current_project.nil?
+      yield current_project
+    end
+    
+    def find(project_name)
+      # TODO: sanitize project_name to prevent a query injection attack here
+      path = File.join(CRUISE_DATA_ROOT, 'projects', project_name)
+      return nil unless File.directory?(path)
+      load_project(path)
+    end
+
+    def load_project(dir)
+      returning read(dir, load_config = false) do |project|
+        project.path = dir
+      end
+    end
+    
+    private
+    
+      def load_all(dir)
+        Dir["#{dir}/*"].find_all {|child| File.directory?(child)}.sort
+      end
+    
+      def save_project(project, dir)
+        project.path = File.join(dir, project.name)
+        FileUtils.mkdir_p project.path
+      end
+
+      def checkout_local_copy(project)
+        work_dir = File.join(project.path, 'work')
+        FileUtils.mkdir_p work_dir
+        project.source_control.checkout
+      end
+
+      def write_config_example(project)
+        config_example = File.join(RAILS_ROOT, 'config', 'cruise_config.rb.example')
+        config_in_subversion = File.join(project.path, 'work', 'cruise_config.rb')
+        cruise_config = File.join(project.path, 'cruise_config.rb')
+        if File.exists?(config_example) and not File.exists?(config_in_subversion)
+          FileUtils.cp(config_example, cruise_config)
+        end
+      end
+  end
+  
   def initialize(name, scm = nil)
     @name = name
     @path = File.join(CRUISE_DATA_ROOT, 'projects', @name)
     @scheduler = PollingScheduler.new(self)
     @plugins = []
-    @plugins_by_name = {}
     @config_tracker = ProjectConfigTracker.new(self.path)
     @settings = ''
     @config_file_content = ''
@@ -88,7 +148,7 @@ class Project
   end
 
   def instantiate_plugins
-    @@plugin_names.each do |plugin_name|
+    self.class.plugin_names.each do |plugin_name|
       plugin_instance = plugin_name.to_s.camelize.constantize.new(self)
       self.add_plugin(plugin_instance)
     end
@@ -101,15 +161,10 @@ class Project
       raise "Cannot register an plugin with name #{plugin_name.inspect} " +
             "because another plugin, or a method with the same name already exists"
     end
-    @plugins_by_name[plugin_name] = plugin
+    self.metaclass.send(:define_method, plugin_name) { plugin }
     plugin
   end
 
-  # access plugins by their names
-  def method_missing(method_name, *args, &block)
-    @plugins_by_name.key?(method_name) ? @plugins_by_name[method_name] : super
-  end
-  
   def ==(another)
     another.is_a?(Project) and another.name == self.name
   end
@@ -194,7 +249,11 @@ class Project
     
   def last_complete_build_status
     return "failed" if BuilderStatus.new(self).fatal?
-    last_complete_build ? last_complete_build.status : 'never_built'
+    previously_built? ? last_complete_build.status : 'never_built'
+  end
+  
+  def previously_built?
+    not last_complete_build.nil?
   end
 
   # TODO this and last_builds methods are not Project methods, really - they can be inlined somewhere in the controller layer
@@ -243,7 +302,7 @@ class Project
     if builder_state_and_activity == 'builder_down'
       BuilderStarter.begin_builder(name)
       10.times do
-        sleep 1.second
+        sleep 1.second.to_i
         break if builder_state_and_activity != 'builder_down' 
       end
     end
@@ -265,7 +324,7 @@ class Project
   def build_if_requested
     if build_requested?
       remove_build_requested_flag_file
-      build(source_control.latest_revision, ['Build was manually requested'])
+      build(source_control.latest_revision, ['Build was manually requested.', source_control.latest_revision.to_s])
     end
   end
   
@@ -302,9 +361,8 @@ class Project
       log_changeset(build.artifacts_directory, reasons)
       update_project_to_revision(build, revision)
 
-      if config_tracker.config_modified?
+      if config_modified?
         build.abort
-        notify(:configuration_modified)
         throw :reload_project
       end
     
@@ -328,10 +386,14 @@ class Project
   end
 
   def notify(event, *event_parameters)
+    unless BuilderPlugin.known_event? event
+      raise "You attempted to notify the project of the #{event} event, but the plugin architecture does not understand this event. Add a method to BuilderPlugin, and document it."
+    end
+    
     errors = []
     results = @plugins.collect do |plugin| 
       begin
-        plugin.send(event, *event_parameters) if plugin.respond_to?(event)
+        plugin.send(event, *event_parameters) if plugin.respond_to? event
       rescue => plugin_error
         CruiseControl::Log.error(plugin_error)
         if (event_parameters.first and event_parameters.first.respond_to? :artifacts_directory)
@@ -366,10 +428,6 @@ class Project
     end
   end
 
-  def respond_to?(method_name)
-    @plugins_by_name.key?(method_name) or super
-  end
-
   def build_requested_flag_file
     File.join(path, 'build_requested')
   end
@@ -388,8 +446,8 @@ class Project
   
   def do_clean_checkout?
     case @clean_checkout_when
-    when :always: true
-    when nil, :never: false
+    when :always then true
+    when nil, :never then false
     else
       timestamp_filename = File.join(self.path, 'last_clean_checkout_timestamp')
       unless File.exist?(timestamp_filename)
@@ -431,7 +489,7 @@ class Project
   def triggered_by=(triggers)
     @triggers = [triggers].flatten
   end
-
+  
   private
   
   # sorts a array of builds in order of revision number and rebuild number 
@@ -476,51 +534,5 @@ class Project
     all_builds.each_with_index {|build, index| result = index if build.label == build_label}
     result 
   end
+  
 end
-
-# TODO make me pretty, move me to another file, invoke me from environment.rb
-# TODO check what happens if loading a plugin raises an error (e.g, SyntaxError in plugin/init.rb)
-
-plugin_loader = Object.new
-
-def plugin_loader.load_plugin(plugin_path)
-  plugin_file = File.basename(plugin_path).sub(/\.rb$/, '')
-  plugin_is_directory = (plugin_file == 'init')  
-  plugin_name = plugin_is_directory ? File.basename(File.dirname(plugin_path)) : plugin_file
-
-  CruiseControl::Log.debug("Loading plugin #{plugin_name}")
-  if RAILS_ENV == 'development'
-    load plugin_path
-  else
-    if plugin_is_directory then require "#{plugin_name}/init" else require plugin_name end
-  end
-end
-
-def plugin_loader.load_all
-  plugins = Dir[RAILS_ROOT + "/lib/builder_plugins/*"] + Dir[CRUISE_DATA_ROOT + "/builder_plugins/*"]
-
-  plugins.each do |plugin|
-    # ignore hidden files and directories (they should be considered hidden by Dir[], but just in case)
-    next if File.basename(plugin)[0, 1] == '.'
-    if File.file?(plugin)
-      if plugin[-3..-1] == '.rb'
-        load_plugin(File.basename(plugin))
-      else
-        # a file without .rb extension, ignore
-      end
-    elsif File.directory?(plugin)
-      init_path = File.join(plugin, 'init.rb')
-      if File.file?(init_path)
-        load_plugin(init_path)
-      else
-        log.error("No init.rb found in plugin directory #{plugin}")
-      end
-    else
-      # a path is neither file nor directory. whatever else it may be, let's ignore it.
-      # TODO: find out what happens with symlinks on a Linux here? how about broken symlinks?
-    end
-  end
-
-end
-
-plugin_loader.load_all

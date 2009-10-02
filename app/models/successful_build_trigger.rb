@@ -1,3 +1,6 @@
+# SuccessfulBuildTrigger is one of two build triggers included in CC.rb by default (see also:
+# ChangeInSourceControlTrigger). It allows you to configure a build that is dependent on the 
+# success of another build--in effect, build chaining.
 class SuccessfulBuildTrigger
   attr_accessor :triggered_project
   attr_reader :last_successful_build
@@ -14,7 +17,7 @@ class SuccessfulBuildTrigger
       false
     else
       @last_successful_build = new_last_successful_build
-      reasons << "Triggered by project #{@triggering_project_name}'s build #{@last_successful_build.label}"
+      reasons << "Triggered by project #{triggering_project_name}'s build #{@last_successful_build.label}"
       true
     end
   end
